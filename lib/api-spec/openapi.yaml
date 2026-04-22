@@ -1,36 +1,605 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: CoinWallet Fintech Platform API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
-    description: Health operations
+  - name: auth
+  - name: user
+  - name: kyc
+  - name: wallet
+  - name: transactions
+  - name: payments
+  - name: payouts
+  - name: fees
+  - name: admin
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
           content:
             application/json:
-              schema:
-                $ref: "#/components/schemas/HealthStatus"
+              schema: { $ref: "#/components/schemas/HealthStatus" }
+
+  /auth/session:
+    get:
+      operationId: getSession
+      tags: [auth]
+      summary: Get current session user
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionUser" }
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Demo login (issues a session for the demo user)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoginRequest" }
+      responses:
+        "200":
+          description: Session
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionUser" }
+
+  /me:
+    get:
+      operationId: getMe
+      tags: [user]
+      summary: Get current user profile
+      responses:
+        "200":
+          description: User profile
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserProfile" }
+
+  /kyc:
+    get:
+      operationId: getKyc
+      tags: [kyc]
+      summary: Get KYC status
+      responses:
+        "200":
+          description: KYC status
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/KycStatus" }
+    post:
+      operationId: submitKyc
+      tags: [kyc]
+      summary: Submit KYC documents
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/KycSubmission" }
+      responses:
+        "200":
+          description: Updated KYC
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/KycStatus" }
+
+  /wallet:
+    get:
+      operationId: getWallet
+      tags: [wallet]
+      summary: Get wallet balance and metadata
+      responses:
+        "200":
+          description: Wallet
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Wallet" }
+
+  /wallet/summary:
+    get:
+      operationId: getWalletSummary
+      tags: [wallet]
+      summary: Dashboard summary (balance, totals, daily limits)
+      responses:
+        "200":
+          description: Summary
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WalletSummary" }
+
+  /transactions:
+    get:
+      operationId: listTransactions
+      tags: [transactions]
+      summary: List wallet transactions
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, default: 50, maximum: 200 }
+        - in: query
+          name: type
+          schema: { type: string, enum: [LOAD, PAYOUT, FEE, REFUND, ADJUSTMENT] }
+      responses:
+        "200":
+          description: Transactions
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TransactionList" }
+
+  /transactions/{id}:
+    get:
+      operationId: getTransaction
+      tags: [transactions]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Transaction with ledger entries
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TransactionDetail" }
+
+  /payments/intents:
+    post:
+      operationId: createPaymentIntent
+      tags: [payments]
+      summary: Create a card payment intent (load money into wallet)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreatePaymentIntent" }
+      responses:
+        "200":
+          description: Created intent
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaymentIntent" }
+
+  /payments/intents/{id}/confirm:
+    post:
+      operationId: confirmPaymentIntent
+      tags: [payments]
+      summary: Mock confirm a payment intent (gateway success)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ConfirmPaymentRequest" }
+      responses:
+        "200":
+          description: Confirmed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaymentIntent" }
+
+  /payments/webhook:
+    post:
+      operationId: paymentsWebhook
+      tags: [payments]
+      summary: Gateway webhook (signature verified server-side)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GatewayWebhook" }
+      responses:
+        "200":
+          description: Acknowledged
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Ack" }
+
+  /payouts:
+    post:
+      operationId: createPayout
+      tags: [payouts]
+      summary: Create UPI/bank payout
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreatePayoutRequest" }
+      responses:
+        "200":
+          description: Payout queued
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Payout" }
+    get:
+      operationId: listPayouts
+      tags: [payouts]
+      responses:
+        "200":
+          description: Payouts
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PayoutList" }
+
+  /payouts/{id}/retry:
+    post:
+      operationId: retryPayout
+      tags: [payouts]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Retried
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Payout" }
+
+  /payees:
+    get:
+      operationId: listPayees
+      tags: [payouts]
+      summary: List saved payees (UPI/bank)
+      responses:
+        "200":
+          description: Payees
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PayeeList" }
+    post:
+      operationId: createPayee
+      tags: [payouts]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreatePayeeRequest" }
+      responses:
+        "200":
+          description: Payee
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Payee" }
+
+  /fees/quote:
+    post:
+      operationId: quoteFees
+      tags: [fees]
+      summary: Calculate fees for a load or payout
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FeeQuoteRequest" }
+      responses:
+        "200":
+          description: Quote
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FeeQuote" }
+
+  /admin/ledger:
+    get:
+      operationId: getLedgerOverview
+      tags: [admin]
+      summary: Platform-wide ledger totals (user, platform, fee wallets)
+      responses:
+        "200":
+          description: Overview
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LedgerOverview" }
+
+  /admin/risk/queue:
+    get:
+      operationId: getRiskQueue
+      tags: [admin]
+      summary: Items flagged by the risk engine
+      responses:
+        "200":
+          description: Risk items
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RiskQueue" }
+
 components:
   schemas:
     HealthStatus:
       type: object
+      required: [status]
       properties:
-        status:
-          type: string
-      required:
-        - status
+        status: { type: string }
 
+    Ack:
+      type: object
+      required: [received]
+      properties:
+        received: { type: boolean }
+
+    LoginRequest:
+      type: object
+      required: [email]
+      properties:
+        email: { type: string }
+
+    SessionUser:
+      type: object
+      required: [id, email, name, role]
+      properties:
+        id: { type: string }
+        email: { type: string }
+        name: { type: string }
+        role: { type: string, enum: [user, admin] }
+
+    UserProfile:
+      type: object
+      required: [id, email, name, role, kycStatus, dailyLimitInr, createdAt]
+      properties:
+        id: { type: string }
+        email: { type: string }
+        name: { type: string }
+        role: { type: string, enum: [user, admin] }
+        kycStatus: { type: string, enum: [PENDING, VERIFIED, REJECTED] }
+        dailyLimitInr: { type: number }
+        createdAt: { type: string, format: date-time }
+
+    KycStatus:
+      type: object
+      required: [status, dailyLimitInr]
+      properties:
+        status: { type: string, enum: [PENDING, VERIFIED, REJECTED] }
+        panMasked: { type: string, nullable: true }
+        fullName: { type: string, nullable: true }
+        dailyLimitInr: { type: number }
+        submittedAt: { type: string, format: date-time, nullable: true }
+        reviewedAt: { type: string, format: date-time, nullable: true }
+
+    KycSubmission:
+      type: object
+      required: [fullName, pan]
+      properties:
+        fullName: { type: string }
+        pan: { type: string }
+        addressLine: { type: string }
+
+    Wallet:
+      type: object
+      required: [id, balanceInr, currency, status, updatedAt]
+      properties:
+        id: { type: string }
+        balanceInr: { type: number, description: "Balance in INR (1 coin = ₹1)" }
+        currency: { type: string }
+        status: { type: string, enum: [ACTIVE, FROZEN, CLOSED] }
+        updatedAt: { type: string, format: date-time }
+
+    WalletSummary:
+      type: object
+      required: [balanceInr, todayLoadedInr, todayPayoutInr, dailyLimitInr, totalLoadedInr, totalPayoutInr, totalFeesInr, recentTransactions]
+      properties:
+        balanceInr: { type: number }
+        todayLoadedInr: { type: number }
+        todayPayoutInr: { type: number }
+        dailyLimitInr: { type: number }
+        totalLoadedInr: { type: number }
+        totalPayoutInr: { type: number }
+        totalFeesInr: { type: number }
+        recentTransactions:
+          type: array
+          items: { $ref: "#/components/schemas/Transaction" }
+
+    Transaction:
+      type: object
+      required: [id, type, status, amountInr, feeInr, netInr, createdAt]
+      properties:
+        id: { type: string }
+        type: { type: string, enum: [LOAD, PAYOUT, FEE, REFUND, ADJUSTMENT] }
+        status: { type: string, enum: [PENDING, SUCCESS, FAILED, REVERSED] }
+        amountInr: { type: number }
+        feeInr: { type: number }
+        netInr: { type: number }
+        description: { type: string, nullable: true }
+        referenceId: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+
+    TransactionList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Transaction" }
+
+    LedgerEntry:
+      type: object
+      required: [id, accountId, accountName, direction, amountInr, createdAt]
+      properties:
+        id: { type: string }
+        accountId: { type: string }
+        accountName: { type: string }
+        direction: { type: string, enum: [DEBIT, CREDIT] }
+        amountInr: { type: number }
+        createdAt: { type: string, format: date-time }
+
+    TransactionDetail:
+      type: object
+      required: [transaction, entries]
+      properties:
+        transaction: { $ref: "#/components/schemas/Transaction" }
+        entries:
+          type: array
+          items: { $ref: "#/components/schemas/LedgerEntry" }
+
+    CreatePaymentIntent:
+      type: object
+      required: [amountInr]
+      properties:
+        amountInr: { type: number, minimum: 1 }
+        idempotencyKey: { type: string }
+
+    PaymentIntent:
+      type: object
+      required: [id, amountInr, feeInr, netInr, status, gateway, createdAt]
+      properties:
+        id: { type: string }
+        amountInr: { type: number }
+        feeInr: { type: number }
+        netInr: { type: number, description: "Coins credited to wallet on success" }
+        status: { type: string, enum: [REQUIRES_CONFIRMATION, PROCESSING, SUCCESS, FAILED] }
+        gateway: { type: string }
+        clientSecret: { type: string, nullable: true }
+        transactionId: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+
+    ConfirmPaymentRequest:
+      type: object
+      required: [cardLast4]
+      properties:
+        cardLast4: { type: string, description: "Last 4 digits only — full card never stored (PCI scope-out)" }
+        cardholderName: { type: string }
+
+    GatewayWebhook:
+      type: object
+      required: [event, paymentId, signature]
+      properties:
+        event: { type: string, enum: [payment.succeeded, payment.failed] }
+        paymentId: { type: string }
+        signature: { type: string }
+
+    Payee:
+      type: object
+      required: [id, label, type, identifier, createdAt]
+      properties:
+        id: { type: string }
+        label: { type: string }
+        type: { type: string, enum: [UPI, BANK] }
+        identifier: { type: string, description: "UPI ID or masked account number" }
+        ifsc: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+
+    PayeeList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Payee" }
+
+    CreatePayeeRequest:
+      type: object
+      required: [label, type, identifier]
+      properties:
+        label: { type: string }
+        type: { type: string, enum: [UPI, BANK] }
+        identifier: { type: string }
+        ifsc: { type: string }
+
+    CreatePayoutRequest:
+      type: object
+      required: [payeeId, amountInr]
+      properties:
+        payeeId: { type: string }
+        amountInr: { type: number, minimum: 1 }
+        note: { type: string }
+        idempotencyKey: { type: string }
+
+    Payout:
+      type: object
+      required: [id, payeeId, payeeLabel, amountInr, feeInr, totalDebitInr, status, createdAt]
+      properties:
+        id: { type: string }
+        payeeId: { type: string }
+        payeeLabel: { type: string }
+        amountInr: { type: number }
+        feeInr: { type: number }
+        totalDebitInr: { type: number }
+        status: { type: string, enum: [PENDING, PROCESSING, SUCCESS, FAILED] }
+        failureReason: { type: string, nullable: true }
+        retryCount: { type: integer }
+        transactionId: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        completedAt: { type: string, format: date-time, nullable: true }
+
+    PayoutList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Payout" }
+
+    FeeQuoteRequest:
+      type: object
+      required: [kind, amountInr]
+      properties:
+        kind: { type: string, enum: [LOAD, PAYOUT] }
+        amountInr: { type: number, minimum: 1 }
+
+    FeeQuote:
+      type: object
+      required: [kind, amountInr, feeInr, netInr, feeBps, feeFixedInr]
+      properties:
+        kind: { type: string, enum: [LOAD, PAYOUT] }
+        amountInr: { type: number }
+        feeInr: { type: number }
+        netInr: { type: number }
+        feeBps: { type: integer }
+        feeFixedInr: { type: number }
+
+    LedgerAccountTotal:
+      type: object
+      required: [accountId, name, type, balanceInr]
+      properties:
+        accountId: { type: string }
+        name: { type: string }
+        type: { type: string, enum: [USER, PLATFORM, FEE] }
+        balanceInr: { type: number }
+
+    LedgerOverview:
+      type: object
+      required: [accounts, totalUserCoinsInr, totalFeesInr, totalPlatformInr, doubleEntryBalanced]
+      properties:
+        accounts:
+          type: array
+          items: { $ref: "#/components/schemas/LedgerAccountTotal" }
+        totalUserCoinsInr: { type: number }
+        totalFeesInr: { type: number }
+        totalPlatformInr: { type: number }
+        doubleEntryBalanced: { type: boolean }
+
+    RiskItem:
+      type: object
+      required: [id, userEmail, kind, severity, message, createdAt]
+      properties:
+        id: { type: string }
+        userEmail: { type: string }
+        kind: { type: string }
+        severity: { type: string, enum: [LOW, MEDIUM, HIGH] }
+        message: { type: string }
+        createdAt: { type: string, format: date-time }
+
+    RiskQueue:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/RiskItem" }
