@@ -1,0 +1,124 @@
+version: "3.9"
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: credpay-postgres
+    environment:
+      POSTGRES_USER: ${DB_USER:-credpay}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-dev-password-change-in-prod}
+      POSTGRES_DB: ${DB_NAME:-credpay}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./lib/db/schema.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U credpay"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - credpay-network
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: credpay-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-dev-password}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "--no-auth-warning", "-a", "${REDIS_PASSWORD:-dev-password}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - credpay-network
+
+  # RabbitMQ Message Queue
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: credpay-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+    ports:
+      - "5672:5672"  # AMQP
+      - "15672:15672"  # Management UI
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - credpay-network
+
+  # API Server
+  api-server:
+    build:
+      context: .
+      dockerfile: artifacts/api-server/Dockerfile
+    container_name: credpay-api
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://${DB_USER:-credpay}:${DB_PASSWORD:-dev-password-change-in-prod}@postgres:5432/${DB_NAME:-credpay}
+      REDIS_URL: redis://:${REDIS_PASSWORD:-dev-password}@redis:6379
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@rabbitmq:5672
+      PORT: 3000
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-prod}
+      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
+      JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY}
+      # Gateway configs (mock for development)
+      RAZORPAY_ENV: ${RAZORPAY_ENV:-sandbox}
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET}
+      RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET:-webhook-secret}
+      CASHFREE_ENV: ${CASHFREE_ENV:-sandbox}
+      CASHFREE_CLIENT_ID: ${CASHFREE_CLIENT_ID}
+      CASHFREE_CLIENT_SECRET: ${CASHFREE_CLIENT_SECRET}
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - credpay-network
+    volumes:
+      - ./:/app  # Mount for hot-reload in development
+    command: pnpm run dev
+
+  # Adminer (Database UI)
+  adminer:
+    image: adminer:latest
+    container_name: credpay-adminer
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+    networks:
+      - credpay-network
+
+volumes:
+  postgres_data:
+  redis_data:
+  rabbitmq_data:
+
+networks:
+  credpay-network:
+    driver: bridge
