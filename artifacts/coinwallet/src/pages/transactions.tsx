@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { format } from "date-fns";
 import { Search, ArrowDownRight, ArrowUpRight, Activity } from "lucide-react";
-import type { ListTransactionsType } from "@workspace/api-client-react/src/generated/api.schemas";
+import type { ListTransactionsType } from "@workspace/api-client-react";
 
 export default function Transactions() {
   const [typeFilter, setTypeFilter] = useState<ListTransactionsType | "ALL">("ALL");

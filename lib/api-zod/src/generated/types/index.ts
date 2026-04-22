@@ -38,6 +38,8 @@ export * from "./paymentIntentStatus";
 export * from "./payout";
 export * from "./payoutList";
 export * from "./payoutStatus";
+export * from "./quoteFeesKind";
+export * from "./quoteFeesParams";
 export * from "./riskItem";
 export * from "./riskItemSeverity";
 export * from "./riskQueue";

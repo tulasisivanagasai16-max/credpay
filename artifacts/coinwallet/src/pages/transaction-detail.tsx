@@ -11,7 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 
 export default function TransactionDetail() {
   const { id } = useParams<{ id: string }>();
-  const { data, isLoading } = useGetTransaction(id!, { query: { enabled: !!id } });
+  const { data, isLoading } = useGetTransaction(id!, { query: { enabled: !!id } as never });
   const { toast } = useToast();
 
   const handleCopy = (text: string) => {

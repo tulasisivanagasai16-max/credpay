@@ -199,6 +199,14 @@ export const CreatePaymentIntentResponse = zod.object({
   gateway: zod.string(),
   clientSecret: zod.string().nullish(),
   transactionId: zod.string().nullish(),
+  razorpayKeyId: zod
+    .string()
+    .nullish()
+    .describe("Public Razorpay key for frontend checkout"),
+  razorpayOrderId: zod
+    .string()
+    .nullish()
+    .describe("Razorpay order id created server-side"),
   createdAt: zod.coerce.date(),
 });
 
@@ -212,8 +220,18 @@ export const ConfirmPaymentIntentParams = zod.object({
 export const ConfirmPaymentIntentBody = zod.object({
   cardLast4: zod
     .string()
-    .describe("Last 4 digits only — full card never stored (PCI scope-out)"),
+    .optional()
+    .describe("Last 4 digits only — used for mock mode (PCI scope-out)"),
   cardholderName: zod.string().optional(),
+  razorpayPaymentId: zod
+    .string()
+    .optional()
+    .describe("Returned by Razorpay checkout on success"),
+  razorpayOrderId: zod.string().optional(),
+  razorpaySignature: zod
+    .string()
+    .optional()
+    .describe("HMAC signature returned by Razorpay checkout"),
 });
 
 export const ConfirmPaymentIntentResponse = zod.object({
@@ -230,6 +248,14 @@ export const ConfirmPaymentIntentResponse = zod.object({
   gateway: zod.string(),
   clientSecret: zod.string().nullish(),
   transactionId: zod.string().nullish(),
+  razorpayKeyId: zod
+    .string()
+    .nullish()
+    .describe("Public Razorpay key for frontend checkout"),
+  razorpayOrderId: zod
+    .string()
+    .nullish()
+    .describe("Razorpay order id created server-side"),
   createdAt: zod.coerce.date(),
 });
 
@@ -346,9 +372,9 @@ export const CreatePayeeResponse = zod.object({
  * @summary Calculate fees for a load or payout
  */
 
-export const QuoteFeesBody = zod.object({
+export const QuoteFeesQueryParams = zod.object({
   kind: zod.enum(["LOAD", "PAYOUT"]),
-  amountInr: zod.number().min(1),
+  amountInr: zod.coerce.number().min(1),
 });
 
 export const QuoteFeesResponse = zod.object({

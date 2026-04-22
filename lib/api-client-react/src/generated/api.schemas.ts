@@ -196,13 +196,22 @@ export interface PaymentIntent {
   gateway: string;
   clientSecret?: string | null;
   transactionId?: string | null;
+  /** Public Razorpay key for frontend checkout */
+  razorpayKeyId?: string | null;
+  /** Razorpay order id created server-side */
+  razorpayOrderId?: string | null;
   createdAt: string;
 }
 
 export interface ConfirmPaymentRequest {
-  /** Last 4 digits only — full card never stored (PCI scope-out) */
-  cardLast4: string;
+  /** Last 4 digits only — used for mock mode (PCI scope-out) */
+  cardLast4?: string;
   cardholderName?: string;
+  /** Returned by Razorpay checkout on success */
+  razorpayPaymentId?: string;
+  razorpayOrderId?: string;
+  /** HMAC signature returned by Razorpay checkout */
+  razorpaySignature?: string;
 }
 
 export type GatewayWebhookEvent =
@@ -384,4 +393,19 @@ export const ListTransactionsType = {
   FEE: "FEE",
   REFUND: "REFUND",
   ADJUSTMENT: "ADJUSTMENT",
+} as const;
+
+export type QuoteFeesParams = {
+  kind: QuoteFeesKind;
+  /**
+   * @minimum 1
+   */
+  amountInr: number;
+};
+
+export type QuoteFeesKind = (typeof QuoteFeesKind)[keyof typeof QuoteFeesKind];
+
+export const QuoteFeesKind = {
+  LOAD: "LOAD",
+  PAYOUT: "PAYOUT",
 } as const;

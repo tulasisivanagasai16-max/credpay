@@ -23,7 +23,6 @@ import type {
   CreatePaymentIntent,
   CreatePayoutRequest,
   FeeQuote,
-  FeeQuoteRequest,
   GatewayWebhook,
   HealthStatus,
   KycStatus,
@@ -36,6 +35,7 @@ import type {
   PaymentIntent,
   Payout,
   PayoutList,
+  QuoteFeesParams,
   RiskQueue,
   SessionUser,
   TransactionDetail,
@@ -1466,88 +1466,96 @@ export const useCreatePayee = <
 /**
  * @summary Calculate fees for a load or payout
  */
-export const getQuoteFeesUrl = () => {
-  return `/api/fees/quote`;
+export const getQuoteFeesUrl = (params: QuoteFeesParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/fees/quote?${stringifiedParams}`
+    : `/api/fees/quote`;
 };
 
 export const quoteFees = async (
-  feeQuoteRequest: FeeQuoteRequest,
+  params: QuoteFeesParams,
   options?: RequestInit,
 ): Promise<FeeQuote> => {
-  return customFetch<FeeQuote>(getQuoteFeesUrl(), {
+  return customFetch<FeeQuote>(getQuoteFeesUrl(params), {
     ...options,
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(feeQuoteRequest),
+    method: "GET",
   });
 };
 
-export const getQuoteFeesMutationOptions = <
-  TError = ErrorType<unknown>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof quoteFees>>,
-    TError,
-    { data: BodyType<FeeQuoteRequest> },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof quoteFees>>,
-  TError,
-  { data: BodyType<FeeQuoteRequest> },
-  TContext
-> => {
-  const mutationKey = ["quoteFees"];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      "mutationKey" in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
-
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof quoteFees>>,
-    { data: BodyType<FeeQuoteRequest> }
-  > = (props) => {
-    const { data } = props ?? {};
-
-    return quoteFees(data, requestOptions);
-  };
-
-  return { mutationFn, ...mutationOptions };
+export const getQuoteFeesQueryKey = (params?: QuoteFeesParams) => {
+  return [`/api/fees/quote`, ...(params ? [params] : [])] as const;
 };
 
-export type QuoteFeesMutationResult = NonNullable<
+export const getQuoteFeesQueryOptions = <
+  TData = Awaited<ReturnType<typeof quoteFees>>,
+  TError = ErrorType<unknown>,
+>(
+  params: QuoteFeesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof quoteFees>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getQuoteFeesQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof quoteFees>>> = ({
+    signal,
+  }) => quoteFees(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof quoteFees>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type QuoteFeesQueryResult = NonNullable<
   Awaited<ReturnType<typeof quoteFees>>
 >;
-export type QuoteFeesMutationBody = BodyType<FeeQuoteRequest>;
-export type QuoteFeesMutationError = ErrorType<unknown>;
+export type QuoteFeesQueryError = ErrorType<unknown>;
 
 /**
  * @summary Calculate fees for a load or payout
  */
-export const useQuoteFees = <
+
+export function useQuoteFees<
+  TData = Awaited<ReturnType<typeof quoteFees>>,
   TError = ErrorType<unknown>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof quoteFees>>,
-    TError,
-    { data: BodyType<FeeQuoteRequest> },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationResult<
-  Awaited<ReturnType<typeof quoteFees>>,
-  TError,
-  { data: BodyType<FeeQuoteRequest> },
-  TContext
-> => {
-  return useMutation(getQuoteFeesMutationOptions(options));
-};
+>(
+  params: QuoteFeesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof quoteFees>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getQuoteFeesQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 /**
  * @summary Platform-wide ledger totals (user, platform, fee wallets)

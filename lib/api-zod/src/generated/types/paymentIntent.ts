@@ -17,5 +17,9 @@ export interface PaymentIntent {
   gateway: string;
   clientSecret?: string | null;
   transactionId?: string | null;
+  /** Public Razorpay key for frontend checkout */
+  razorpayKeyId?: string | null;
+  /** Razorpay order id created server-side */
+  razorpayOrderId?: string | null;
   createdAt: Date;
 }

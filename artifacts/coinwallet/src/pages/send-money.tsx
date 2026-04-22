@@ -1,15 +1,18 @@
 import { useState } from "react";
 import { Link } from "wouter";
-import { 
-  useListPayees, 
-  useCreatePayee, 
-  useQuoteFees, 
+import {
+  useListPayees,
+  useCreatePayee,
+  useQuoteFees,
   useCreatePayout,
-  useGetWalletSummaryQueryKey,
-  useGetWalletQueryKey,
-  useGetLedgerOverviewQueryKey,
-  getListTransactionsQueryKey
+  getGetWalletSummaryQueryKey,
+  getGetWalletQueryKey,
+  getGetLedgerOverviewQueryKey,
+  getListTransactionsQueryKey,
+  getListPayeesQueryKey,
+  getListPayoutsQueryKey,
 } from "@workspace/api-client-react";
+import type { CreatePayeeRequestType } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatInr } from "@/lib/format";
 import { Button } from "@/components/ui/button";
@@ -20,7 +23,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Loader2, Plus, ArrowUpRight, Send, CheckCircle2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import type { CreatePayeeRequestType } from "@workspace/api-client-react/src/generated/api.schemas";
 
 export default function SendMoney() {
   const queryClient = useQueryClient();
@@ -44,9 +46,10 @@ export default function SendMoney() {
   const createPayee = useCreatePayee();
   const createPayout = useCreatePayout();
   
-  const quoteQuery = useQuoteFees({ kind: "PAYOUT", amountInr: numAmount }, { 
-    query: { enabled: numAmount > 0 && payeeId !== "", staleTime: 30000 } 
-  });
+  const quoteQuery = useQuoteFees(
+    { kind: "PAYOUT", amountInr: numAmount },
+    { query: { enabled: numAmount > 0 && payeeId !== "", staleTime: 30000 } as never },
+  );
 
   const handleAddPayee = (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,7 +57,7 @@ export default function SendMoney() {
       { data: { label: newPayeeLabel, type: newPayeeType, identifier: newPayeeIdentifier, ifsc: newPayeeType === 'BANK' ? newPayeeIfsc : undefined } },
       {
         onSuccess: (data) => {
-          queryClient.invalidateQueries({ queryKey: ["/api/payees"] });
+          queryClient.invalidateQueries({ queryKey: getListPayeesQueryKey() });
           setPayeeId(data.id);
           setIsAddingPayee(false);
           toast({ title: "Payee saved successfully" });
@@ -77,7 +80,7 @@ export default function SendMoney() {
           queryClient.invalidateQueries({ queryKey: getGetWalletSummaryQueryKey() });
           queryClient.invalidateQueries({ queryKey: getListTransactionsQueryKey() });
           queryClient.invalidateQueries({ queryKey: getGetLedgerOverviewQueryKey() });
-          queryClient.invalidateQueries({ queryKey: ["/api/payouts"] });
+          queryClient.invalidateQueries({ queryKey: getListPayoutsQueryKey() });
           setStep(2);
         },
         onError: (err: any) => {

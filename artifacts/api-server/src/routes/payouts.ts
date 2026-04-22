@@ -19,7 +19,7 @@ import {
 } from "../services/ledger.service";
 import { checkLimit } from "../services/kyc.service";
 import { evaluatePayout, recordFlags } from "../services/risk.service";
-import { dispatchPayout } from "../services/payout-gateway";
+import { dispatchTransfer, upsertBeneficiary } from "../services/cashfree";
 
 const router: IRouter = Router();
 
@@ -31,10 +31,34 @@ async function processPayoutInternal(payoutId: string) {
 
   await db.update(payoutsTable).set({ status: "PROCESSING" }).where(eq(payoutsTable.id, p.id));
 
-  const result = await dispatchPayout({
+  // Ensure beneficiary is registered with the payout gateway.
+  try {
+    await upsertBeneficiary({
+      beneficiaryId: `bene_${payee.id}`,
+      beneficiaryName: payee.label,
+      type: payee.type as "UPI" | "BANK",
+      identifier: payee.identifier,
+      ifsc: payee.ifsc,
+    });
+  } catch (err) {
+    await db
+      .update(payoutsTable)
+      .set({
+        status: "FAILED",
+        failureReason: (err as Error).message,
+        completedAt: new Date(),
+      })
+      .where(eq(payoutsTable.id, p.id));
+    return;
+  }
+
+  const result = await dispatchTransfer({
+    transferId: `tx_${p.id}`,
+    beneficiaryId: `bene_${payee.id}`,
+    amountPaise: BigInt(p.amountPaise),
     type: payee.type as "UPI" | "BANK",
     identifier: payee.identifier,
-    amountPaise: BigInt(p.amountPaise),
+    remarks: p.note ?? "CoinWallet payout",
   });
 
   const { platformCash, feeRevenue } = await ensureSystemAccounts();

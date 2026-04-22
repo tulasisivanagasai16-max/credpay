@@ -281,15 +281,19 @@ paths:
               schema: { $ref: "#/components/schemas/Payee" }
 
   /fees/quote:
-    post:
+    get:
       operationId: quoteFees
       tags: [fees]
       summary: Calculate fees for a load or payout
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/FeeQuoteRequest" }
+      parameters:
+        - in: query
+          name: kind
+          required: true
+          schema: { type: string, enum: [LOAD, PAYOUT] }
+        - in: query
+          name: amountInr
+          required: true
+          schema: { type: number, minimum: 1 }
       responses:
         "200":
           description: Quote
@@ -467,14 +471,18 @@ components:
         gateway: { type: string }
         clientSecret: { type: string, nullable: true }
         transactionId: { type: string, nullable: true }
+        razorpayKeyId: { type: string, nullable: true, description: "Public Razorpay key for frontend checkout" }
+        razorpayOrderId: { type: string, nullable: true, description: "Razorpay order id created server-side" }
         createdAt: { type: string, format: date-time }
 
     ConfirmPaymentRequest:
       type: object
-      required: [cardLast4]
       properties:
-        cardLast4: { type: string, description: "Last 4 digits only — full card never stored (PCI scope-out)" }
+        cardLast4: { type: string, description: "Last 4 digits only — used for mock mode (PCI scope-out)" }
         cardholderName: { type: string }
+        razorpayPaymentId: { type: string, description: "Returned by Razorpay checkout on success" }
+        razorpayOrderId: { type: string }
+        razorpaySignature: { type: string, description: "HMAC signature returned by Razorpay checkout" }
 
     GatewayWebhook:
       type: object

@@ -5,8 +5,6 @@ import {
   ConfirmPaymentIntentBody,
   ConfirmPaymentIntentParams,
   ConfirmPaymentIntentResponse,
-  PaymentsWebhookBody,
-  PaymentsWebhookResponse,
 } from "@workspace/api-zod";
 import { db, paymentIntentsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
@@ -19,7 +17,14 @@ import {
   postTransaction,
 } from "../services/ledger.service";
 import { checkLimit } from "../services/kyc.service";
-import { chargeCard, verifyWebhookSignature } from "../services/payment-gateway";
+import {
+  createOrder,
+  fetchPayment,
+  isRazorpayLive,
+  RAZORPAY_PUBLIC_KEY_ID,
+  verifyCheckoutSignature,
+  verifyWebhookSignature,
+} from "../services/razorpay";
 
 const router: IRouter = Router();
 
@@ -35,6 +40,14 @@ router.post("/payments/intents", requireUser, async (req, res) => {
   }
 
   const { feePaise, netPaise } = quoteFee("LOAD", amountPaise);
+
+  // Create the Razorpay order up-front so the FE can launch checkout right away.
+  const order = await createOrder({
+    amountPaise,
+    receipt: `cw_${Date.now()}`,
+    notes: { userId: u.id },
+  });
+
   const [intent] = await db
     .insert(paymentIntentsTable)
     .values({
@@ -43,6 +56,8 @@ router.post("/payments/intents", requireUser, async (req, res) => {
       feePaise: dbNumeric(feePaise),
       netPaise: dbNumeric(netPaise),
       status: "REQUIRES_CONFIRMATION",
+      gateway: isRazorpayLive ? "razorpay" : "razorpay-mock",
+      gatewayRef: order.id,
       idempotencyKey: body.idempotencyKey ?? null,
     })
     .returning();
@@ -55,8 +70,10 @@ router.post("/payments/intents", requireUser, async (req, res) => {
       netInr: paiseToInr(netPaise),
       status: intent!.status,
       gateway: intent!.gateway,
-      clientSecret: `cs_demo_${intent!.id}`,
+      clientSecret: `cs_${intent!.id}`,
       transactionId: null,
+      razorpayKeyId: RAZORPAY_PUBLIC_KEY_ID,
+      razorpayOrderId: order.id,
       createdAt: intent!.createdAt.toISOString(),
     }),
   );
@@ -73,37 +90,64 @@ router.post("/payments/intents/:id/confirm", requireUser, async (req, res) => {
     return;
   }
   if (intent.status === "SUCCESS" && intent.transactionId) {
-    res.json(
-      ConfirmPaymentIntentResponse.parse({
-        id: intent.id,
-        amountInr: paiseToInr(intent.amountPaise),
-        feeInr: paiseToInr(intent.feePaise),
-        netInr: paiseToInr(intent.netPaise),
-        status: intent.status,
-        gateway: intent.gateway,
-        clientSecret: null,
-        transactionId: intent.transactionId,
-        createdAt: intent.createdAt.toISOString(),
-      }),
-    );
+    res.json(buildIntentResponse(intent));
     return;
+  }
+
+  let cardLast4 = body.cardLast4 ?? null;
+  let gatewayRef = intent.gatewayRef ?? `pay_${Date.now()}`;
+  let charged: { ok: boolean; reason?: string };
+
+  if (isRazorpayLive) {
+    // Real path — verify the signature returned by Razorpay Checkout.
+    if (!body.razorpayPaymentId || !body.razorpayOrderId || !body.razorpaySignature) {
+      res.status(400).json({ error: "Missing Razorpay confirmation fields" });
+      return;
+    }
+    if (body.razorpayOrderId !== intent.gatewayRef) {
+      res.status(400).json({ error: "Order id mismatch" });
+      return;
+    }
+    const sigOk = verifyCheckoutSignature({
+      orderId: body.razorpayOrderId,
+      paymentId: body.razorpayPaymentId,
+      signature: body.razorpaySignature,
+    });
+    if (!sigOk) {
+      res.status(400).json({ error: "Razorpay signature verification failed" });
+      return;
+    }
+    // Cross-check status with Razorpay (defense in depth).
+    const payment = await fetchPayment(body.razorpayPaymentId);
+    const ok = payment && (payment.status === "captured" || payment.status === "authorized");
+    cardLast4 = payment?.card?.last4 ?? cardLast4;
+    gatewayRef = body.razorpayPaymentId;
+    charged = ok ? { ok: true } : { ok: false, reason: "Payment not captured" };
+  } else {
+    // Mock path: cardLast4 starting with "0" simulates a decline.
+    if (!cardLast4) {
+      res.status(400).json({ error: "cardLast4 required in mock mode" });
+      return;
+    }
+    charged = cardLast4.startsWith("0")
+      ? { ok: false, reason: "Card declined" }
+      : { ok: true };
   }
 
   await db
     .update(paymentIntentsTable)
-    .set({ status: "PROCESSING", cardLast4: body.cardLast4, cardholderName: body.cardholderName ?? null })
+    .set({
+      status: "PROCESSING",
+      cardLast4,
+      cardholderName: body.cardholderName ?? null,
+      gatewayRef,
+    })
     .where(eq(paymentIntentsTable.id, id));
 
-  const charge = await chargeCard({
-    amountPaise: BigInt(intent.amountPaise),
-    cardLast4: body.cardLast4,
-    cardholderName: body.cardholderName,
-  });
-
-  if (charge.status === "failed") {
+  if (!charged.ok) {
     await db
       .update(paymentIntentsTable)
-      .set({ status: "FAILED", gatewayRef: charge.gatewayRef })
+      .set({ status: "FAILED" })
       .where(eq(paymentIntentsTable.id, id));
 
     const failedTxn = await postTransaction({
@@ -113,32 +157,19 @@ router.post("/payments/intents/:id/confirm", requireUser, async (req, res) => {
       amountPaise: BigInt(intent.amountPaise),
       feePaise: 0n,
       netPaise: 0n,
-      description: `Card load failed (${charge.failureReason})`,
-      referenceId: charge.gatewayRef,
+      description: `Card load failed (${charged.reason ?? "declined"})`,
+      referenceId: gatewayRef,
       postings: [],
     });
 
-    res.json(
-      ConfirmPaymentIntentResponse.parse({
-        id: intent.id,
-        amountInr: paiseToInr(intent.amountPaise),
-        feeInr: paiseToInr(intent.feePaise),
-        netInr: paiseToInr(intent.netPaise),
-        status: "FAILED",
-        gateway: intent.gateway,
-        clientSecret: null,
-        transactionId: failedTxn.transactionId,
-        createdAt: intent.createdAt.toISOString(),
-      }),
-    );
+    res.json({
+      ...buildIntentResponse({ ...intent, status: "FAILED" }),
+      transactionId: failedTxn.transactionId,
+    });
     return;
   }
 
-  // Success: post double-entry ledger.
-  // Card load flow:
-  //   DEBIT  PLATFORM_CASH    amount   (we received money from gateway)
-  //   CREDIT USER_WALLET      net      (user gets net coins)
-  //   CREDIT FEE_REVENUE      fee      (platform earns fee)
+  // SUCCESS: post the double-entry ledger.
   const { platformCash, feeRevenue } = await ensureSystemAccounts();
   const userAcct = await getOrCreateUserAccount(u.id);
 
@@ -150,7 +181,7 @@ router.post("/payments/intents/:id/confirm", requireUser, async (req, res) => {
     feePaise: BigInt(intent.feePaise),
     netPaise: BigInt(intent.netPaise),
     description: `Card load via ${intent.gateway}`,
-    referenceId: charge.gatewayRef,
+    referenceId: gatewayRef,
     idempotencyKey: intent.idempotencyKey ?? undefined,
     postings: [
       { accountId: platformCash.id, direction: "DEBIT", amountPaise: BigInt(intent.amountPaise) },
@@ -161,34 +192,53 @@ router.post("/payments/intents/:id/confirm", requireUser, async (req, res) => {
 
   await db
     .update(paymentIntentsTable)
-    .set({ status: "SUCCESS", gatewayRef: charge.gatewayRef, transactionId })
+    .set({ status: "SUCCESS", gatewayRef, transactionId })
     .where(eq(paymentIntentsTable.id, id));
 
-  res.json(
-    ConfirmPaymentIntentResponse.parse({
-      id: intent.id,
-      amountInr: paiseToInr(intent.amountPaise),
-      feeInr: paiseToInr(intent.feePaise),
-      netInr: paiseToInr(intent.netPaise),
-      status: "SUCCESS",
-      gateway: intent.gateway,
-      clientSecret: null,
-      transactionId,
-      createdAt: intent.createdAt.toISOString(),
-    }),
-  );
+  res.json({
+    ...buildIntentResponse({ ...intent, status: "SUCCESS", gatewayRef }),
+    transactionId,
+  });
 });
 
-router.post("/payments/webhook", async (req, res) => {
-  const body = PaymentsWebhookBody.parse(req.body);
-  const payload = JSON.stringify({ event: body.event, paymentId: body.paymentId });
-  const ok = verifyWebhookSignature(payload, body.signature);
-  if (!ok) {
+// Razorpay webhook — signature in `x-razorpay-signature`. We treat this as
+// belt-and-suspenders alongside checkout-signature verification on confirm.
+router.post("/payments/webhook", (req, res) => {
+  const sig = (req.headers["x-razorpay-signature"] as string | undefined) ?? "";
+  const raw = JSON.stringify(req.body ?? {});
+  if (!verifyWebhookSignature(raw, sig)) {
     res.status(401).json({ error: "Invalid signature" });
     return;
   }
-  // In production: idempotently apply event to the matching payment intent.
-  res.json(PaymentsWebhookResponse.parse({ received: true }));
+  // In production: idempotently apply event (payment.captured / payment.failed)
+  // to the matching payment_intent by gateway_ref.
+  res.json({ received: true });
 });
+
+function buildIntentResponse(intent: {
+  id: string;
+  amountPaise: string;
+  feePaise: string;
+  netPaise: string;
+  status: string;
+  gateway: string;
+  gatewayRef?: string | null;
+  transactionId: string | null;
+  createdAt: Date;
+}) {
+  return CreatePaymentIntentResponse.parse({
+    id: intent.id,
+    amountInr: paiseToInr(intent.amountPaise),
+    feeInr: paiseToInr(intent.feePaise),
+    netInr: paiseToInr(intent.netPaise),
+    status: intent.status,
+    gateway: intent.gateway,
+    clientSecret: null,
+    transactionId: intent.transactionId,
+    razorpayKeyId: RAZORPAY_PUBLIC_KEY_ID,
+    razorpayOrderId: intent.gatewayRef ?? null,
+    createdAt: intent.createdAt.toISOString(),
+  });
+}
 
 export default router;
