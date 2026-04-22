@@ -10,6 +10,7 @@ import payoutsRouter from "./payouts";
 import payeesRouter from "./payees";
 import feesRouter from "./fees";
 import adminRouter from "./admin";
+import webhooksRouter from "./webhooks";
 
 const router: IRouter = Router();
 
@@ -24,5 +25,6 @@ router.use(payoutsRouter);
 router.use(payeesRouter);
 router.use(feesRouter);
 router.use(adminRouter);
+router.use(webhooksRouter);
 
 export default router;

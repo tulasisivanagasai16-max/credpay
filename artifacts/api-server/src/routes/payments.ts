@@ -23,7 +23,6 @@ import {
   isRazorpayLive,
   RAZORPAY_PUBLIC_KEY_ID,
   verifyCheckoutSignature,
-  verifyWebhookSignature,
 } from "../services/razorpay";
 
 const router: IRouter = Router();
@@ -199,20 +198,6 @@ router.post("/payments/intents/:id/confirm", requireUser, async (req, res) => {
     ...buildIntentResponse({ ...intent, status: "SUCCESS", gatewayRef }),
     transactionId,
   });
-});
-
-// Razorpay webhook — signature in `x-razorpay-signature`. We treat this as
-// belt-and-suspenders alongside checkout-signature verification on confirm.
-router.post("/payments/webhook", (req, res) => {
-  const sig = (req.headers["x-razorpay-signature"] as string | undefined) ?? "";
-  const raw = JSON.stringify(req.body ?? {});
-  if (!verifyWebhookSignature(raw, sig)) {
-    res.status(401).json({ error: "Invalid signature" });
-    return;
-  }
-  // In production: idempotently apply event (payment.captured / payment.failed)
-  // to the matching payment_intent by gateway_ref.
-  res.json({ received: true });
 });
 
 function buildIntentResponse(intent: {
