@@ -31,6 +31,9 @@ COPY --from=builder /app/artifacts/api-server/dist ./dist
 COPY --from=builder /app/artifacts/api-server/package.json ./package.json
 COPY --from=builder /app/node_modules ./node_modules
 
+# Ensure thread-stream worker is available in the expected location
+RUN mkdir -p /app/artifacts/api-server/dist && cp /app/dist/thread-stream-worker.mjs /app/artifacts/api-server/dist/ 2>/dev/null || true
+
 # Create non-root user for security
 RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001
 USER nodejs
