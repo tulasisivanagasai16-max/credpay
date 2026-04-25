@@ -9,7 +9,7 @@ COPY lib ./lib
 COPY artifacts/api-server ./artifacts/api-server
 
 # Install pnpm
-RUN npm install -g pnpm@9
+RUN npm install -g pnpm@10
 
 # Install dependencies
 RUN pnpm install --frozen-lockfile
