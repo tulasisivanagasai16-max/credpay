@@ -190,6 +190,9 @@ importers:
       pino-http:
         specifier: ^10
         version: 10.5.0
+      thread-stream:
+        specifier: 3.1.0
+        version: 3.1.0
     devDependencies:
       '@types/cookie-parser':
         specifier: ^1.4.10
@@ -212,9 +215,6 @@ importers:
       pino-pretty:
         specifier: ^13
         version: 13.1.3
-      thread-stream:
-        specifier: 3.1.0
-        version: 3.1.0
 
   artifacts/coinwallet:
     devDependencies:

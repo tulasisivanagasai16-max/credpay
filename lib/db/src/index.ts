@@ -1,7 +1,6 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import * as schema from "./schema";
-import * as mongo from "./mongo";
 
 const { Pool } = pg;
 
@@ -13,8 +12,8 @@ if (!isMongo && !process.env.DATABASE_URL) {
   );
 }
 
-export const mongoClient = isMongo ? mongo.getMongoClient() : undefined;
-export const mongoDb = isMongo ? mongo.getMongoDb : undefined;
+export const mongoClient = isMongo ? import("./mongo").then(m => m.getMongoClient()) : undefined;
+export const mongoDb = isMongo ? import("./mongo").then(m => m.getMongoDb()) : undefined;
 
 export const pool = !isMongo
   ? new Pool({ connectionString: process.env.DATABASE_URL })
@@ -23,4 +22,3 @@ export const pool = !isMongo
 export const db = !isMongo && pool ? drizzle(pool, { schema }) : undefined;
 
 export * from "./schema";
-export * from "./mongo";
